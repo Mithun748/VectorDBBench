@@ -26,3 +26,4 @@ clickhouse_connect
 pyvespa
 mysql-connector-python
 boto3
+vecx==0.33.1

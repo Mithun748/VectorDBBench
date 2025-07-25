@@ -49,6 +49,7 @@ class DB(Enum):
     Vespa = "Vespa"
     LanceDB = "LanceDB"
     OceanBase = "OceanBase"
+    VectorX = "VectorX"
     S3Vectors = "S3Vectors"
 
     @property
@@ -188,6 +189,11 @@ class DB(Enum):
             from .lancedb.lancedb import LanceDB
 
             return LanceDB
+        
+        if self == DB.VectorX:
+            from .vectorx.vectorx import VectorX
+
+            return VectorX
 
         if self == DB.S3Vectors:
             from .s3_vectors.s3_vectors import S3Vectors
@@ -334,6 +340,11 @@ class DB(Enum):
             from .lancedb.config import LanceDBConfig
 
             return LanceDBConfig
+        
+        if self == DB.VectorX:
+            from .vectorx.config import VectorXConfig
+
+            return VectorXConfig
 
         if self == DB.S3Vectors:
             from .s3_vectors.config import S3VectorsConfig
