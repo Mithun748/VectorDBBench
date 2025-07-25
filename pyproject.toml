@@ -54,7 +54,7 @@ all = [
     "grpcio==1.53.0", # for qdrant-client and pymilvus
     "grpcio-tools==1.53.0", # for qdrant-client and pymilvus
     "qdrant-client",
-    "pinecone-client",
+    "pinecone",
     "weaviate-client",
     "elasticsearch",
     "sqlalchemy",
@@ -77,7 +77,7 @@ all = [
 ]
 
 qdrant          = [ "qdrant-client" ]
-pinecone        = [ "pinecone-client" ]
+pinecone        = [ "pinecone" ]
 weaviate        = [ "weaviate-client" ]
 elastic         = [ "elasticsearch" ]
 # For elastic and aliyun_elasticsearch

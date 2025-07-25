@@ -1,12 +1,13 @@
 """Wrapper around the Milvus vector database over VectorDB"""
 
 import logging
-import time
 from collections.abc import Iterable
 from contextlib import contextmanager
 
 import boto3
+from botocore.exceptions import UnknownServiceError
 from vectordb_bench.backend.filter import Filter, FilterOp
+import json
 
 from ..api import VectorDB
 from .config import S3VectorsIndexConfig
@@ -47,12 +48,17 @@ class S3Vectors(VectorDB):
         self.bucket_name = self.db_config.get("bucket_name")
         self.index_name = self.db_config.get("index_name")
 
-        client = boto3.client(
-            service_name="s3vectors",
-            region_name=self.region_name,
-            aws_access_key_id=self.access_key_id,
-            aws_secret_access_key=self.secret_access_key,
-        )
+        try:
+            client = boto3.client(
+                service_name="s3vectors",
+                region_name=self.region_name,
+                aws_access_key_id=self.access_key_id,
+                aws_secret_access_key=self.secret_access_key,
+            )
+        except UnknownServiceError as e:
+            raise RuntimeError(
+                "boto3 does not recognize 's3vectors' as a service. "
+            ) from e
 
         if drop_old:
             # delete old index if exists
@@ -106,7 +112,6 @@ class S3Vectors(VectorDB):
         **kwargs,
     ) -> tuple[int, Exception]:
         """Insert embeddings into s3-vectors. should call self.init() first"""
-        # use the first insert_embeddings to init collection
         assert self.client is not None
         assert len(embeddings) == len(metadata)
         insert_count = 0
@@ -125,15 +130,24 @@ class S3Vectors(VectorDB):
                     }
                     for i in range(batch_start_offset, batch_end_offset)
                 ]
-                self.client.put_vectors(
-                    vectorBucketName=self.bucket_name,
-                    indexName=self.index_name,
-                    vectors=insert_data,
-                )
+                log.info(f"Inserting batch of {len(insert_data)} vectors into S3Vectors index {self.index_name}")
+                try:
+                    response = self.client.put_vectors(
+                        vectorBucketName=self.bucket_name,
+                        indexName=self.index_name,
+                        vectors=insert_data,
+                    )
+                    log.info(f"Put vectors response: {json.dumps(response, default=str)}")
+                    if not response or (isinstance(response, dict) and response.get('ResponseMetadata', {}).get('HTTPStatusCode', 200) != 200):
+                        log.warning(f"Put vectors may have failed: {response}")
+                except Exception as e:
+                    log.warning(f"Failed to insert data in batch: {e}")
+                    return insert_count, e
                 insert_count += len(insert_data)
         except Exception as e:
-            log.info(f"Failed to insert data: {e}")
+            log.warning(f"Failed to insert data: {e}")
             return insert_count, e
+        log.info(f"Successfully inserted {insert_count} vectors into S3Vectors index {self.index_name}")
         return insert_count, None
 
     def prepare_filter(self, filters: Filter):
@@ -155,17 +169,22 @@ class S3Vectors(VectorDB):
     ) -> list[int]:
         """Perform a search on a query embedding and return results."""
         assert self.client is not None
-
-        # Perform the search.
-        res = self.client.query_vectors(
-            vectorBucketName=self.bucket_name,
-            indexName=self.index_name,
-            queryVector={"float32": query},
-            topK=k,
-            filter=self.filter,
-            returnDistance=False,
-            returnMetadata=False,
-        )
-
-        # Organize results.
-        return [int(result["key"]) for result in res["vectors"]]
+        log.info(f"Querying S3Vectors index {self.index_name} with topK={k} and filter={self.filter}")
+        try:
+            res = self.client.query_vectors(
+                vectorBucketName=self.bucket_name,
+                indexName=self.index_name,
+                queryVector={"float32": query},
+                topK=k,
+                filter=self.filter,
+                returnDistance=False,
+                returnMetadata=False,
+            )
+            log.info(f"Query vectors response: {json.dumps(res, default=str)}")
+            if not res or "vectors" not in res:
+                log.warning(f"Query returned no results: {res}")
+                return []
+            return [int(result["key"]) for result in res["vectors"]]
+        except Exception as e:
+            log.warning(f"Failed to query vectors: {e}")
+            return []
